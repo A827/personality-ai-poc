@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type AnswerMap = Record<string, string>;
 
@@ -23,17 +23,21 @@ export default function InterviewPage() {
     []
   );
 
-  const [answers, setAnswers] = useState<AnswerMap>(() => {
-    if (typeof window === "undefined") return {};
+  const [answers, setAnswers] = useState<AnswerMap>({});
+  const [loaded, setLoaded] = useState(false);
+  const [status, setStatus] = useState<string>("");
+
+  // ✅ Load localStorage AFTER mount to avoid hydration mismatch
+  useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : {};
+      setAnswers(raw ? JSON.parse(raw) : {});
     } catch {
-      return {};
+      setAnswers({});
+    } finally {
+      setLoaded(true);
     }
-  });
-
-  const [status, setStatus] = useState<string>("");
+  }, []);
 
   function setAnswer(id: string, value: string) {
     setAnswers((prev) => ({ ...prev, [id]: value }));
@@ -66,8 +70,16 @@ export default function InterviewPage() {
           <a href="/" className="text-sm underline">
             ← Back
           </a>
+
+          {/* ✅ Only show counts after client has loaded localStorage */}
           <div className="text-sm text-gray-600">
-            Completed: <span className="font-semibold">{filledCount}</span> / {questions.length}
+            {loaded ? (
+              <>
+                Completed: <span className="font-semibold">{filledCount}</span> / {questions.length}
+              </>
+            ) : (
+              <>Loading…</>
+            )}
           </div>
         </div>
 
@@ -78,33 +90,39 @@ export default function InterviewPage() {
           </p>
         </header>
 
-        <div className="space-y-4">
-          {questions.map((item, idx) => (
-            <div key={item.id} className="rounded-xl border p-4 space-y-2">
-              <div className="font-semibold">
-                {idx + 1}. {item.q}
+        {!loaded ? (
+          <div className="rounded-xl border p-4 text-sm text-gray-700">Loading your saved answers…</div>
+        ) : (
+          <div className="space-y-4">
+            {questions.map((item, idx) => (
+              <div key={item.id} className="rounded-xl border p-4 space-y-2">
+                <div className="font-semibold">
+                  {idx + 1}. {item.q}
+                </div>
+                <textarea
+                  className="w-full min-h-[90px] rounded-lg border p-3 outline-none focus:ring-2"
+                  placeholder="Type your answer..."
+                  value={answers[item.id] || ""}
+                  onChange={(e) => setAnswer(item.id, e.target.value)}
+                />
               </div>
-              <textarea
-                className="w-full min-h-[90px] rounded-lg border p-3 outline-none focus:ring-2"
-                placeholder="Type your answer..."
-                value={answers[item.id] || ""}
-                onChange={(e) => setAnswer(item.id, e.target.value)}
-              />
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex gap-2">
             <button
               onClick={save}
-              className="rounded-xl border px-4 py-2 hover:bg-gray-50 transition"
+              className="rounded-xl border px-4 py-2 hover:bg-gray-50 transition disabled:opacity-50"
+              disabled={!loaded}
             >
               Save
             </button>
             <button
               onClick={clearAll}
-              className="rounded-xl border px-4 py-2 hover:bg-gray-50 transition"
+              className="rounded-xl border px-4 py-2 hover:bg-gray-50 transition disabled:opacity-50"
+              disabled={!loaded}
             >
               Clear
             </button>
