@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { addCorrection } from "@/lib/pocStorage";
 
 type AnswerMap = Record<string, string>;
-type ChatMsg = { role: "user" | "assistant"; text: string };
+type ChatMsg = {
+  role: "user" | "assistant";
+  text: string;
+  meta?: {
+    question?: string;
+    usedProfile?: string;
+  };
+};
 
 const STORAGE_KEY = "poc_personality_answers_v1";
 
@@ -16,10 +24,10 @@ function safeParse(raw: string | null): AnswerMap {
   }
 }
 
-// Very simple “profile builder” from saved answers
 function buildProfileSummary(answers: AnswerMap) {
   const get = (id: string) => (answers[id] || "").trim();
 
+  const identity1 = get("identity_1");
   const values1 = get("values_1");
   const values2 = get("values_2");
   const decisions1 = get("decisions_1");
@@ -28,28 +36,28 @@ function buildProfileSummary(answers: AnswerMap) {
   const emotions2 = get("emotions_2");
   const relationships1 = get("relationships_1");
   const relationships2 = get("relationships_2");
-  const identity1 = get("identity_1");
   const advice1 = get("advice_1");
+
+  const lines = [
+    identity1 && `Self-description: ${identity1}`,
+    values1 && `Core values: ${values1}`,
+    values2 && `Priority choice: ${values2}`,
+    decisions1 && `Decision style: ${decisions1}`,
+    decisions2 && `Decision speed: ${decisions2}`,
+    emotions1 && `Calm under stress: ${emotions1}`,
+    emotions2 && `Anger pattern: ${emotions2}`,
+    relationships1 && `How you show love: ${relationships1}`,
+    relationships2 && `Conflict style: ${relationships2}`,
+    advice1 && `Repeated advice: ${advice1}`,
+  ].filter(Boolean) as string[];
 
   const filled = Object.values(answers).filter((v) => (v || "").trim().length > 0).length;
 
-  return {
-    filled,
-    summary: [
-      identity1 && `Self-description: ${identity1}`,
-      values1 && `Core values: ${values1}`,
-      values2 && `Priority choice: ${values2}`,
-      decisions1 && `Decision style: ${decisions1}`,
-      decisions2 && `Decision speed: ${decisions2}`,
-      emotions1 && `Calm under stress: ${emotions1}`,
-      emotions2 && `Anger pattern: ${emotions2}`,
-      relationships1 && `How you show love: ${relationships1}`,
-      relationships2 && `Conflict style: ${relationships2}`,
-      advice1 && `Repeated advice: ${advice1}`,
-    ]
-      .filter(Boolean)
-      .join("\n"),
-  };
+  return { filled, lines, summary: lines.join("\n") };
+}
+
+function uid() {
+  return `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 }
 
 export default function AskPage() {
@@ -59,10 +67,21 @@ export default function AskPage() {
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
 
+  // Correction modal
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [correctionDraft, setCorrectionDraft] = useState("");
+  const [correctionTarget, setCorrectionTarget] = useState<{
+    question: string;
+    aiAnswer: string;
+  } | null>(null);
+
+  // “Why” toggle per message index
+  const [whyOpen, setWhyOpen] = useState<Record<number, boolean>>({});
+
   const [chat, setChat] = useState<ChatMsg[]>([
     {
       role: "assistant",
-      text: "Ask a question. Now we call /api/ask (real AI) if it’s set up.",
+      text: "Ask a question. You can now mark answers as accurate or correct them (training loop).",
     },
   ]);
 
@@ -76,15 +95,19 @@ export default function AskPage() {
 
   async function send() {
     const q = input.trim();
-    if (!q) return;
-    if (isSending) return;
+    if (!q || isSending) return;
 
-    // Add user message
     setChat((prev) => [...prev, { role: "user", text: q }]);
     setInput("");
 
-    // Add placeholder assistant message
-    setChat((prev) => [...prev, { role: "assistant", text: "Thinking…" }]);
+    // store some “why” context
+    const usedProfile = profile.summary || "";
+
+    setChat((prev) => [
+      ...prev,
+      { role: "assistant", text: "Thinking…", meta: { question: q, usedProfile } },
+    ]);
+
     setIsSending(true);
 
     try {
@@ -98,13 +121,13 @@ export default function AskPage() {
 
       setChat((prev) => {
         const copy = [...prev];
-        // replace last message (Thinking…)
         copy[copy.length - 1] = {
           role: "assistant",
           text:
             data?.answer ||
             data?.error ||
             "No answer returned. (Check /api/ask and your GROQ_API_KEY)",
+          meta: { question: q, usedProfile },
         };
         return copy;
       });
@@ -114,12 +137,42 @@ export default function AskPage() {
         copy[copy.length - 1] = {
           role: "assistant",
           text: "Network error calling the AI route.",
+          meta: { question: q, usedProfile },
         };
         return copy;
       });
     } finally {
       setIsSending(false);
     }
+  }
+
+  function toggleWhy(index: number) {
+    setWhyOpen((prev) => ({ ...prev, [index]: !prev[index] }));
+  }
+
+  function openCorrection(question: string, aiAnswer: string) {
+    setCorrectionTarget({ question, aiAnswer });
+    setCorrectionDraft("");
+    setCorrectionOpen(true);
+  }
+
+  function saveCorrection() {
+    if (!correctionTarget) return;
+    const corrected = correctionDraft.trim();
+    if (!corrected) return;
+
+    addCorrection({
+      id: uid(),
+      question: correctionTarget.question,
+      aiAnswer: correctionTarget.aiAnswer,
+      correctedAnswer: corrected,
+      createdAt: Date.now(),
+    });
+
+    setCorrectionOpen(false);
+    setCorrectionTarget(null);
+    setCorrectionDraft("");
+    alert("✅ Saved correction. Next step: we’ll use these corrections to improve future answers.");
   }
 
   return (
@@ -129,15 +182,20 @@ export default function AskPage() {
           <a href="/" className="text-sm underline">
             ← Back
           </a>
-          <a href="/interview" className="text-sm underline">
-            Edit Interview →
-          </a>
+          <div className="flex gap-3">
+            <a href="/profile" className="text-sm underline">
+              My Profile →
+            </a>
+            <a href="/interview" className="text-sm underline">
+              Edit Interview →
+            </a>
+          </div>
         </div>
 
         <header className="space-y-2">
           <h1 className="text-2xl font-bold">Ask Me</h1>
           <p className="text-gray-600">
-            This is the chat experience. It uses your saved profile summary + /api/ask.
+            Real chat + training loop. Mark answers accurate or correct them.
           </p>
         </header>
 
@@ -156,18 +214,57 @@ export default function AskPage() {
         </div>
 
         <div className="rounded-xl border overflow-hidden">
-          <div className="max-h-[420px] overflow-auto p-4 space-y-3">
+          <div className="max-h-[460px] overflow-auto p-4 space-y-3">
             {chat.map((m, idx) => (
-              <div
-                key={idx}
-                className={`rounded-xl border p-3 text-sm whitespace-pre-wrap ${
-                  m.role === "user" ? "bg-gray-50" : ""
-                }`}
-              >
-                <div className="text-xs text-gray-500 mb-1">
-                  {m.role === "user" ? "You" : "Assistant"}
+              <div key={idx} className="space-y-2">
+                <div
+                  className={`rounded-xl border p-3 text-sm whitespace-pre-wrap ${
+                    m.role === "user" ? "bg-gray-50" : ""
+                  }`}
+                >
+                  <div className="text-xs text-gray-500 mb-1">
+                    {m.role === "user" ? "You" : "Assistant"}
+                  </div>
+                  {m.text}
                 </div>
-                {m.text}
+
+                {/* Actions under assistant messages only (not the first welcome message) */}
+                {m.role === "assistant" && m.meta?.question && (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="text-xs rounded-lg border px-3 py-1 hover:bg-gray-50"
+                      onClick={() => alert("✅ Noted as accurate (we’ll store this in the next step).")}
+                    >
+                      ✅ Accurate
+                    </button>
+
+                    <button
+                      className="text-xs rounded-lg border px-3 py-1 hover:bg-gray-50"
+                      onClick={() => openCorrection(m.meta!.question!, m.text)}
+                    >
+                      ❌ Not me (correct)
+                    </button>
+
+                    <button
+                      className="text-xs rounded-lg border px-3 py-1 hover:bg-gray-50"
+                      onClick={() => toggleWhy(idx)}
+                    >
+                      🧠 Why
+                    </button>
+                  </div>
+                )}
+
+                {m.role === "assistant" && whyOpen[idx] && (
+                  <div className="rounded-xl border p-3 text-xs text-gray-700 whitespace-pre-wrap">
+                    <div className="font-semibold mb-2">Why this answer:</div>
+                    <div className="text-gray-600">
+                      The assistant used your saved profile summary:
+                    </div>
+                    <div className="mt-2 border rounded-lg p-3 text-gray-600 whitespace-pre-wrap">
+                      {m.meta?.usedProfile || "(No profile summary available.)"}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -196,6 +293,53 @@ export default function AskPage() {
         <footer className="text-center text-xs text-gray-500">
           This is a POC. The assistant is an AI representation and may be inaccurate.
         </footer>
+
+        {/* Correction Modal */}
+        {correctionOpen && correctionTarget && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
+            <div className="w-full max-w-lg rounded-2xl bg-white border p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold">Correct the AI</div>
+                <button className="text-sm underline" onClick={() => setCorrectionOpen(false)}>
+                  Close
+                </button>
+              </div>
+
+              <div className="text-xs text-gray-600">Question</div>
+              <div className="rounded-lg border p-3 text-sm whitespace-pre-wrap">
+                {correctionTarget.question}
+              </div>
+
+              <div className="text-xs text-gray-600">AI Answer</div>
+              <div className="rounded-lg border p-3 text-sm whitespace-pre-wrap">
+                {correctionTarget.aiAnswer}
+              </div>
+
+              <div className="text-xs text-gray-600">What would YOU say instead?</div>
+              <textarea
+                className="w-full min-h-[120px] rounded-lg border p-3 text-sm outline-none focus:ring-2"
+                value={correctionDraft}
+                onChange={(e) => setCorrectionDraft(e.target.value)}
+                placeholder="Write your corrected answer…"
+              />
+
+              <div className="flex justify-end gap-2">
+                <button
+                  className="rounded-xl border px-4 py-2 text-sm hover:bg-gray-50"
+                  onClick={() => setCorrectionOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="rounded-xl border px-4 py-2 text-sm hover:bg-gray-50"
+                  onClick={saveCorrection}
+                >
+                  Save Correction
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );
