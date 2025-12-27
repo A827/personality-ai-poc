@@ -1,5 +1,5 @@
 export type Correction = {
-  id: string;            // unique id
+  id: string;
   question: string;
   aiAnswer: string;
   correctedAnswer: string;

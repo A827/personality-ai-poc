@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { addCorrection } from "@/lib/pocStorage";
+import { addCorrection, loadCorrections } from "../lib/pocStorage";
 
 type AnswerMap = Record<string, string>;
 type ChatMsg = {
@@ -24,6 +24,7 @@ function safeParse(raw: string | null): AnswerMap {
   }
 }
 
+// Very simple “profile builder” from saved answers
 function buildProfileSummary(answers: AnswerMap) {
   const get = (id: string) => (answers[id] || "").trim();
 
@@ -60,6 +61,15 @@ function uid() {
   return `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 }
 
+// ✅ NEW: Send corrections in BODY (not headers)
+function buildCorrectionsPayload(limit = 6) {
+  return loadCorrections().slice(0, limit).map((c) => ({
+    question: (c.question || "").slice(0, 220),
+    aiAnswer: (c.aiAnswer || "").slice(0, 260),
+    correctedAnswer: (c.correctedAnswer || "").slice(0, 320),
+  }));
+}
+
 export default function AskPage() {
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [loaded, setLoaded] = useState(false);
@@ -81,7 +91,7 @@ export default function AskPage() {
   const [chat, setChat] = useState<ChatMsg[]>([
     {
       role: "assistant",
-      text: "Ask a question. You can now mark answers as accurate or correct them (training loop).",
+      text: "Ask a question. You can mark answers accurate or correct them. Corrections will improve future answers.",
     },
   ]);
 
@@ -100,7 +110,6 @@ export default function AskPage() {
     setChat((prev) => [...prev, { role: "user", text: q }]);
     setInput("");
 
-    // store some “why” context
     const usedProfile = profile.summary || "";
 
     setChat((prev) => [
@@ -111,10 +120,19 @@ export default function AskPage() {
     setIsSending(true);
 
     try {
+      // ✅ NEW: corrections go in JSON body (safe, no header size limits)
+      const corrections = buildCorrectionsPayload(6);
+
       const res = await fetch("/api/ask", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q, profileSummary: profile.summary }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          question: q,
+          profileSummary: profile.summary,
+          corrections, // ✅ send to backend
+        }),
       });
 
       const data = await res.json();
@@ -172,7 +190,8 @@ export default function AskPage() {
     setCorrectionOpen(false);
     setCorrectionTarget(null);
     setCorrectionDraft("");
-    alert("✅ Saved correction. Next step: we’ll use these corrections to improve future answers.");
+
+    alert("✅ Saved correction. Next answers will be influenced by your corrections.");
   }
 
   return (
@@ -194,9 +213,7 @@ export default function AskPage() {
 
         <header className="space-y-2">
           <h1 className="text-2xl font-bold">Ask Me</h1>
-          <p className="text-gray-600">
-            Real chat + training loop. Mark answers accurate or correct them.
-          </p>
+          <p className="text-gray-600">Real chat + corrections training loop.</p>
         </header>
 
         <div className="rounded-xl border p-4 space-y-2">
@@ -228,12 +245,11 @@ export default function AskPage() {
                   {m.text}
                 </div>
 
-                {/* Actions under assistant messages only (not the first welcome message) */}
                 {m.role === "assistant" && m.meta?.question && (
                   <div className="flex flex-wrap gap-2">
                     <button
                       className="text-xs rounded-lg border px-3 py-1 hover:bg-gray-50"
-                      onClick={() => alert("✅ Noted as accurate (we’ll store this in the next step).")}
+                      onClick={() => alert("✅ Noted as accurate (we’ll store this later).")}
                     >
                       ✅ Accurate
                     </button>
@@ -257,9 +273,7 @@ export default function AskPage() {
                 {m.role === "assistant" && whyOpen[idx] && (
                   <div className="rounded-xl border p-3 text-xs text-gray-700 whitespace-pre-wrap">
                     <div className="font-semibold mb-2">Why this answer:</div>
-                    <div className="text-gray-600">
-                      The assistant used your saved profile summary:
-                    </div>
+                    <div className="text-gray-600">The assistant used your saved profile summary:</div>
                     <div className="mt-2 border rounded-lg p-3 text-gray-600 whitespace-pre-wrap">
                       {m.meta?.usedProfile || "(No profile summary available.)"}
                     </div>
@@ -294,7 +308,6 @@ export default function AskPage() {
           This is a POC. The assistant is an AI representation and may be inaccurate.
         </footer>
 
-        {/* Correction Modal */}
         {correctionOpen && correctionTarget && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
             <div className="w-full max-w-lg rounded-2xl bg-white border p-4 space-y-3">
