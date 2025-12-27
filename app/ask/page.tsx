@@ -52,34 +52,17 @@ function buildProfileSummary(answers: AnswerMap) {
   };
 }
 
-// Mock “personality answer” (free placeholder)
-// We intentionally do NOT claim to be the real person.
-function generateMockAnswer(profileSummary: string, userQuestion: string) {
-  const trimmed = userQuestion.trim();
-  if (!trimmed) return "Ask me anything.";
-
-  return [
-    "Here’s a *mock* response based on your saved interview (no real AI connected yet):",
-    "",
-    "What I’m considering about you:",
-    profileSummary ? profileSummary : "(No profile saved yet — go complete the Interview.)",
-    "",
-    "Answer (style-matched as best as possible):",
-    `If I were answering this based on my values and habits, I’d approach it like this: ${trimmed}`,
-    "",
-    "Next upgrade: connect a real AI model so this becomes truly personalized and consistent.",
-  ].join("\n");
-}
-
 export default function AskPage() {
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [loaded, setLoaded] = useState(false);
 
   const [input, setInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
+
   const [chat, setChat] = useState<ChatMsg[]>([
     {
       role: "assistant",
-      text: "Ask a question. For now this uses a FREE mock responder. Next we’ll connect real AI.",
+      text: "Ask a question. Now we call /api/ask (real AI) if it’s set up.",
     },
   ]);
 
@@ -91,15 +74,52 @@ export default function AskPage() {
 
   const profile = useMemo(() => buildProfileSummary(answers), [answers]);
 
-  function send() {
+  async function send() {
     const q = input.trim();
     if (!q) return;
+    if (isSending) return;
 
+    // Add user message
     setChat((prev) => [...prev, { role: "user", text: q }]);
     setInput("");
 
-    const reply = generateMockAnswer(profile.summary, q);
-    setChat((prev) => [...prev, { role: "assistant", text: reply }]);
+    // Add placeholder assistant message
+    setChat((prev) => [...prev, { role: "assistant", text: "Thinking…" }]);
+    setIsSending(true);
+
+    try {
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q, profileSummary: profile.summary }),
+      });
+
+      const data = await res.json();
+
+      setChat((prev) => {
+        const copy = [...prev];
+        // replace last message (Thinking…)
+        copy[copy.length - 1] = {
+          role: "assistant",
+          text:
+            data?.answer ||
+            data?.error ||
+            "No answer returned. (Check /api/ask and your GROQ_API_KEY)",
+        };
+        return copy;
+      });
+    } catch {
+      setChat((prev) => {
+        const copy = [...prev];
+        copy[copy.length - 1] = {
+          role: "assistant",
+          text: "Network error calling the AI route.",
+        };
+        return copy;
+      });
+    } finally {
+      setIsSending(false);
+    }
   }
 
   return (
@@ -117,7 +137,7 @@ export default function AskPage() {
         <header className="space-y-2">
           <h1 className="text-2xl font-bold">Ask Me</h1>
           <p className="text-gray-600">
-            This is the chat experience. Right now it’s a mock responder (free). Next we connect real AI.
+            This is the chat experience. It uses your saved profile summary + /api/ask.
           </p>
         </header>
 
@@ -161,12 +181,14 @@ export default function AskPage() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") send();
               }}
+              disabled={isSending}
             />
             <button
               onClick={send}
-              className="rounded-xl border px-4 py-2 text-sm hover:bg-gray-50 transition"
+              className="rounded-xl border px-4 py-2 text-sm hover:bg-gray-50 transition disabled:opacity-50"
+              disabled={isSending}
             >
-              Send
+              {isSending ? "Sending…" : "Send"}
             </button>
           </div>
         </div>
