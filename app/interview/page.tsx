@@ -1,4 +1,3 @@
-// app/interview/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -32,6 +31,8 @@ function safeParse(raw: string | null): AnswerMap {
 }
 
 export default function InterviewPage() {
+  const MIN_READY = 3;
+
   const questions: Question[] = useMemo(
     () => [
       // 1–5: Identity / voice
@@ -258,8 +259,7 @@ export default function InterviewPage() {
   const [status, setStatus] = useState("");
 
   useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    setAnswers(safeParse(raw));
+    setAnswers(safeParse(localStorage.getItem(STORAGE_KEY)));
     setLoaded(true);
   }, []);
 
@@ -271,9 +271,10 @@ export default function InterviewPage() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(answers));
       setStatus("✅ Saved locally.");
-      setTimeout(() => setStatus(""), 1500);
+      setTimeout(() => setStatus(""), 1200);
     } catch {
-      setStatus("❌ Could not save. (localStorage error)");
+      setStatus("❌ Could not save (localStorage error).");
+      setTimeout(() => setStatus(""), 1800);
     }
   }
 
@@ -282,194 +283,178 @@ export default function InterviewPage() {
     localStorage.removeItem(STORAGE_KEY);
     setAnswers({});
     setStatus("🗑️ Cleared.");
-    setTimeout(() => setStatus(""), 1500);
+    setTimeout(() => setStatus(""), 1200);
   }
 
-  const filledCount = questions.filter((x) => (answers[x.id] || "").trim().length > 0).length;
+  const filledCount = useMemo(
+    () => questions.filter((x) => (answers[x.id] || "").trim().length > 0).length,
+    [answers, questions]
+  );
+
+  const ready = filledCount >= MIN_READY;
   const progressPct = Math.round((filledCount / questions.length) * 100);
 
   return (
-    <main className="ds-page">
-      <div className="ds-shell">
-        {/* Sticky App Header */}
-        <div className="ds-topbar" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <a
-            href="/"
+    <>
+      <header style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <h1 className="ds-h1">Interview</h1>
+        <p className="ds-subtitle">
+          Answer at least <b>{MIN_READY}</b> questions to unlock asking. More answers = more consistent “you”.
+        </p>
+      </header>
+
+      {/* Progress */}
+      <div className="ds-card ds-card-pad" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ fontWeight: 800 }}>Progress</div>
+          <div className="ds-subtitle" style={{ fontSize: 12 }}>
+            {loaded ? `${progressPct}%` : "…"} ({filledCount}/{questions.length})
+          </div>
+        </div>
+
+        <div style={{ height: 8, width: "100%", borderRadius: 999, background: "rgb(var(--border))" }}>
+          <div
             style={{
-              fontWeight: 800,
-              letterSpacing: "-0.02em",
-              color: "rgb(var(--text))",
-              textDecoration: "none",
+              height: 8,
+              borderRadius: 999,
+              width: loaded ? `${progressPct}%` : "0%",
+              background: "rgb(var(--text))",
+              transition: "width 200ms ease",
             }}
+          />
+        </div>
+
+        <div className="ds-subtitle" style={{ fontSize: 12 }}>
+          Status:{" "}
+          <span style={{ color: "rgb(var(--text))", fontWeight: 700 }}>
+            {ready ? "✅ Ready to Ask" : `⚠️ Needs ${MIN_READY - filledCount} more`}
+          </span>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button onClick={save} className="ds-btn ds-btn-primary" disabled={!loaded}>
+            Save
+          </button>
+          <button onClick={clearAll} className="ds-btn" disabled={!loaded}>
+            Clear
+          </button>
+
+          <a
+            className="ds-btn"
+            href={ready ? "/ask" : "/profile"}
+            style={{ opacity: loaded ? 1 : 0.7, pointerEvents: loaded ? "auto" : "none" }}
           >
-            Personality AI
+            {ready ? "Continue to Ask →" : "View Profile →"}
           </a>
 
-          <div className="ds-nav">
-            <a href="/persona">Account</a>
-            <a href="/interview" data-active="true">
-              Interview
-            </a>
-            <a href="/connections">Connections</a>
-            <a href="/ask">Ask</a>
-            <a href="/profile">Profile</a>
-          </div>
-        </div>
-
-        <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <h1 className="ds-h1">Interview (V1)</h1>
-          <p className="ds-subtitle">
-            Mix of short answers + choices + 1–5 scales. Faster, and better training signal.
-          </p>
-        </header>
-
-        {/* Progress */}
-        <div className="ds-card ds-card-pad" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-            <div style={{ fontWeight: 700 }}>Progress</div>
-            <div className="ds-subtitle" style={{ fontSize: 12 }}>
-              {loaded ? `${progressPct}%` : "…"} ({filledCount}/{questions.length})
-            </div>
-          </div>
-
-          <div style={{ height: 8, width: "100%", borderRadius: 999, background: "rgb(var(--border))" }}>
-            <div
-              style={{
-                height: 8,
-                borderRadius: 999,
-                width: loaded ? `${progressPct}%` : "0%",
-                background: "rgb(var(--text))",
-                transition: "width 200ms ease",
-              }}
-            />
-          </div>
-
-          <div className="ds-subtitle" style={{ fontSize: 12 }}>
-            Tip: the choice + scale questions help the AI be consistent.
-          </div>
-        </div>
-
-        {!loaded ? (
-          <div className="ds-card ds-card-pad" style={{ fontSize: 14 }}>
-            Loading…
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {questions.map((item, idx) => {
-              const val = answers[item.id] || "";
-
-              return (
-                <div key={item.id} className="ds-card ds-card-pad" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>
-                    {idx + 1}. {item.q}
-                  </div>
-
-                  {item.type === "text" && (
-                    <textarea
-                      className="ds-textarea"
-                      placeholder={item.placeholder || "Type your answer…"}
-                      value={val}
-                      onChange={(e) => setAnswer(item.id, e.target.value)}
-                    />
-                  )}
-
-                  {item.type === "choice" && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {(item.choices || []).map((c) => {
-                        const checked = val === c.value;
-                        return (
-                          <label
-                            key={c.value}
-                            style={{
-                              display: "flex",
-                              gap: 10,
-                              alignItems: "center",
-                              border: "1px solid rgb(var(--border))",
-                              borderRadius: 14,
-                              padding: "10px 12px",
-                              background: checked ? "rgb(249 250 251)" : "white",
-                              cursor: "pointer",
-                            }}
-                          >
-                            <input
-                              type="radio"
-                              name={item.id}
-                              checked={checked}
-                              onChange={() => setAnswer(item.id, c.value)}
-                            />
-                            <div style={{ fontSize: 14 }}>{c.label}</div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {item.type === "scale" && item.scale && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                        <div className="ds-subtitle" style={{ fontSize: 12 }}>
-                          {item.scale.minLabel}
-                        </div>
-                        <div className="ds-subtitle" style={{ fontSize: 12 }}>
-                          {item.scale.maxLabel}
-                        </div>
-                      </div>
-
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <input
-                          type="range"
-                          min={item.scale.min}
-                          max={item.scale.max}
-                          value={val ? Number(val) : 3}
-                          onChange={(e) => setAnswer(item.id, e.target.value)}
-                          style={{ width: "100%" }}
-                        />
-                        <div
-                          style={{
-                            minWidth: 34,
-                            textAlign: "center",
-                            fontWeight: 700,
-                            border: "1px solid rgb(var(--border))",
-                            borderRadius: 12,
-                            padding: "6px 10px",
-                            background: "white",
-                          }}
-                        >
-                          {val || "3"}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="ds-card ds-card-pad" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button onClick={save} className="ds-btn ds-btn-primary" disabled={!loaded}>
-              Save
-            </button>
-            <button onClick={clearAll} className="ds-btn" disabled={!loaded}>
-              Clear
-            </button>
-          </div>
-
-          <div className="ds-subtitle" style={{ fontSize: 12 }}>
+          <div className="ds-subtitle" style={{ fontSize: 12, marginLeft: "auto" }}>
             {status || "Save whenever you update answers."}
           </div>
         </div>
-
-        <div className="ds-card ds-card-pad" style={{ fontSize: 14 }}>
-          Next: go to <a href="/profile">Profile</a> to see your updated summary.
-        </div>
-
-        <footer className="ds-subtitle" style={{ fontSize: 12, textAlign: "center" }}>
-          This is a POC. The assistant is an AI representation and may be inaccurate.
-        </footer>
       </div>
-    </main>
+
+      {!loaded ? (
+        <div className="ds-card ds-card-pad">Loading…</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {questions.map((item, idx) => {
+            const val = answers[item.id] || "";
+
+            return (
+              <div
+                key={item.id}
+                className="ds-card ds-card-pad"
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 800 }}>
+                  {idx + 1}. {item.q}
+                </div>
+
+                {item.type === "text" && (
+                  <textarea
+                    className="ds-textarea"
+                    placeholder={item.placeholder || "Type your answer…"}
+                    value={val}
+                    onChange={(e) => setAnswer(item.id, e.target.value)}
+                  />
+                )}
+
+                {item.type === "choice" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {(item.choices || []).map((c) => {
+                      const checked = val === c.value;
+                      return (
+                        <label
+                          key={c.value}
+                          style={{
+                            display: "flex",
+                            gap: 10,
+                            alignItems: "center",
+                            border: "1px solid rgb(var(--border))",
+                            borderRadius: 14,
+                            padding: "10px 12px",
+                            background: checked ? "rgba(var(--text), 0.06)" : "transparent",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name={item.id}
+                            checked={checked}
+                            onChange={() => setAnswer(item.id, c.value)}
+                          />
+                          <div style={{ fontSize: 14 }}>{c.label}</div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {item.type === "scale" && item.scale && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                      <div className="ds-subtitle" style={{ fontSize: 12 }}>
+                        {item.scale.minLabel}
+                      </div>
+                      <div className="ds-subtitle" style={{ fontSize: 12 }}>
+                        {item.scale.maxLabel}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <input
+                        type="range"
+                        min={item.scale.min}
+                        max={item.scale.max}
+                        value={val ? Number(val) : 3}
+                        onChange={(e) => setAnswer(item.id, e.target.value)}
+                        style={{ width: "100%" }}
+                      />
+                      <div
+                        style={{
+                          minWidth: 36,
+                          textAlign: "center",
+                          fontWeight: 800,
+                          border: "1px solid rgb(var(--border))",
+                          borderRadius: 12,
+                          padding: "6px 10px",
+                          background: "rgba(var(--text), 0.04)",
+                        }}
+                      >
+                        {val || "3"}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <footer className="ds-subtitle" style={{ fontSize: 12, textAlign: "center" }}>
+        This is a POC. The assistant may be inaccurate.
+      </footer>
+    </>
   );
 }

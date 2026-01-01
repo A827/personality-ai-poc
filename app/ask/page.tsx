@@ -1,4 +1,3 @@
-// app/ask/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -52,6 +51,18 @@ const CONNECTIONS_KEY = "poc_connections_v1";
 const SPEAKER_KEY = "poc_selected_speaker_v1";
 const TARGET_KEY = "poc_selected_target_v1";
 
+const RECENT_CHATS_KEY = "poc_recent_chats_v1";
+const ASK_DRAFT_KEY = "poc_ask_draft_v1";
+
+type RecentChatItem = {
+  id: string;
+  createdAt: number;
+  question: string;
+  answer: string;
+  usedPersona: string;
+  usedProfile: string;
+};
+
 function safeParse<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
   try {
@@ -84,7 +95,6 @@ function buildPersonaSummary(
   return [speakerLine, targetLine, notes].filter(Boolean).join("\n");
 }
 
-// ✅ Build the persona OBJECT the backend expects (speaker/target included)
 function buildPersonaObject(
   account: MyAccount | null,
   speaker: Speaker | null,
@@ -104,23 +114,17 @@ function buildPersonaObject(
 
   return {
     name: meName,
-    relationship: "Me" as const, // keep simple for now
-    tone: "Warm" as const, // keep simple for now
+    relationship: "Me" as const,
+    tone: "Warm" as const,
     description: (account?.bio || "").trim(),
     speaker: speakerText,
     target: targetText,
   };
 }
 
-/**
- * ✅ Profile summary supports:
- * - NEW interview IDs (identity_words, identity_tone, etc.)
- * - OLD interview IDs (identity_1, values_1, etc.) as fallback
- */
 function buildProfileSummary(answers: AnswerMap) {
   const get = (id: string) => (answers[id] || "").trim();
 
-  // pick() = use the first non-empty value among multiple possible IDs
   const pick = (...ids: string[]) => {
     for (const id of ids) {
       const v = get(id);
@@ -129,11 +133,9 @@ function buildProfileSummary(answers: AnswerMap) {
     return "";
   };
 
-  // Turn choice codes into nice labels (so the system prompt is human-readable)
   const mapChoice = (value: string, map: Record<string, string>) =>
     map[value] || value;
 
-  // NEW ids (with fallback to old ids)
   const identityWords = pick("identity_words", "identity_1");
   const identityTone = pick("identity_tone");
   const identityConfidence = pick("identity_confidence");
@@ -164,7 +166,6 @@ function buildProfileSummary(answers: AnswerMap) {
   const trust = pick("relationships_trust");
   const advice = pick("relationships_advice", "advice_1");
 
-  // Maps for some choice codes (optional, but improves prompt quality)
   const toneLabel = identityTone
     ? mapChoice(identityTone, {
         warm: "Warm & friendly",
@@ -233,7 +234,6 @@ function buildProfileSummary(answers: AnswerMap) {
       })
     : "";
 
-  // Build lines (keep them short and "signal-rich")
   const lines = [
     identityWords && `Identity words: ${identityWords}`,
     toneLabel && `Speaking tone: ${toneLabel}`,
@@ -266,9 +266,8 @@ function buildProfileSummary(answers: AnswerMap) {
     advice && `Repeated advice: ${advice}`,
   ].filter(Boolean) as string[];
 
-  const filled = Object.values(answers).filter(
-    (v) => (v || "").trim().length > 0
-  ).length;
+  const filled = Object.values(answers).filter((v) => (v || "").trim().length > 0)
+    .length;
 
   return { filled, lines, summary: lines.join("\n") };
 }
@@ -277,7 +276,6 @@ function uid() {
   return `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 }
 
-// ✅ Corrections sent in BODY (safe, scalable)
 function buildCorrectionsPayload(limit = 6) {
   return loadCorrections()
     .slice(0, limit)
@@ -286,6 +284,19 @@ function buildCorrectionsPayload(limit = 6) {
       aiAnswer: (c.aiAnswer || "").slice(0, 260),
       correctedAnswer: (c.correctedAnswer || "").slice(0, 320),
     }));
+}
+
+function saveRecentChat(item: RecentChatItem) {
+  try {
+    const existing = safeParse<RecentChatItem[]>(
+      localStorage.getItem(RECENT_CHATS_KEY),
+      []
+    );
+    const next = [item, ...existing].slice(0, 5);
+    localStorage.setItem(RECENT_CHATS_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
 }
 
 export default function AskPage() {
@@ -299,7 +310,6 @@ export default function AskPage() {
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
 
-  // Correction modal
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [correctionDraft, setCorrectionDraft] = useState("");
   const [correctionTarget, setCorrectionTarget] = useState<{
@@ -307,7 +317,6 @@ export default function AskPage() {
     aiAnswer: string;
   } | null>(null);
 
-  // “Why” toggle per message index
   const [whyOpen, setWhyOpen] = useState<Record<number, boolean>>({});
 
   const [chat, setChat] = useState<ChatMsg[]>([
@@ -319,33 +328,60 @@ export default function AskPage() {
 
   useEffect(() => {
     setAnswers(safeParse<AnswerMap>(localStorage.getItem(STORAGE_KEY), {}));
-    setAccount(
-      safeParse<MyAccount | null>(localStorage.getItem(PERSONA_KEY), null)
-    );
-    setConnections(
-      safeParse<Connection[]>(localStorage.getItem(CONNECTIONS_KEY), [])
-    );
+    setAccount(safeParse<MyAccount | null>(localStorage.getItem(PERSONA_KEY), null));
+    setConnections(safeParse<Connection[]>(localStorage.getItem(CONNECTIONS_KEY), []));
 
-    const savedSpeaker = safeParse<any>(
-      localStorage.getItem(SPEAKER_KEY),
-      null
-    );
+    const savedSpeaker = safeParse<any>(localStorage.getItem(SPEAKER_KEY), null);
     if (savedSpeaker?.kind === "me") setSpeaker({ kind: "me", label: "Me" });
-    else if (savedSpeaker?.kind === "connection")
-      setSpeaker(savedSpeaker as Speaker);
+    else if (savedSpeaker?.kind === "connection") setSpeaker(savedSpeaker as Speaker);
     else setSpeaker({ kind: "me", label: "Me" });
 
-    const savedTarget = safeParse<any>(
-      localStorage.getItem(TARGET_KEY),
-      null
-    );
+    const savedTarget = safeParse<any>(localStorage.getItem(TARGET_KEY), null);
     if (savedTarget?.kind === "me") setTarget({ kind: "me", label: "Me" });
-    else if (savedTarget?.kind === "connection")
-      setTarget(savedTarget as Target);
+    else if (savedTarget?.kind === "connection") setTarget(savedTarget as Target);
     else setTarget({ kind: "me", label: "Me" });
 
     setLoaded(true);
   }, []);
+
+  const profile = useMemo(() => buildProfileSummary(answers), [answers]);
+
+  const displayName = (account?.displayName || "").trim();
+  const MIN_INTERVIEW_ANSWERS = 3;
+
+  const needsAccount = loaded && displayName.length === 0;
+  const needsInterview = loaded && profile.filled < MIN_INTERVIEW_ANSWERS;
+  const isGated = needsAccount || needsInterview;
+
+  // ✅ GUARD: if not ready, go to /start (single flow)
+  useEffect(() => {
+    if (!loaded) return;
+    if (isGated) {
+      // preserve draft if user typed something
+      try {
+        const draft = input.trim();
+        if (draft) localStorage.setItem(ASK_DRAFT_KEY, draft);
+      } catch {
+        // ignore
+      }
+      window.location.replace("/start");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, isGated]);
+
+  // load draft question (from home recent chats / demo)
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      const draft = (localStorage.getItem(ASK_DRAFT_KEY) || "").trim();
+      if (draft) {
+        setInput(draft);
+        localStorage.removeItem(ASK_DRAFT_KEY);
+      }
+    } catch {
+      // ignore
+    }
+  }, [loaded]);
 
   // Validate saved speaker/target against current connections
   useEffect(() => {
@@ -356,12 +392,7 @@ export default function AskPage() {
       if (prev.kind === "me") return prev;
       const found = connections.find((c) => c.id === prev.id);
       if (!found) return { kind: "me", label: "Me" };
-      return {
-        kind: "connection",
-        id: found.id,
-        label: found.name,
-        role: found.role,
-      };
+      return { kind: "connection", id: found.id, label: found.name, role: found.role };
     });
 
     setTarget((prev) => {
@@ -369,33 +400,17 @@ export default function AskPage() {
       if (prev.kind === "me") return prev;
       const found = connections.find((c) => c.id === prev.id);
       if (!found) return { kind: "me", label: "Me" };
-      return {
-        kind: "connection",
-        id: found.id,
-        label: found.name,
-        role: found.role,
-      };
+      return { kind: "connection", id: found.id, label: found.name, role: found.role };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, connections.length]);
-
-  const profile = useMemo(() => buildProfileSummary(answers), [answers]);
-
-  // ✅ Guardrails: require Account name + minimum interview answers
-  const displayName = (account?.displayName || "").trim();
-  const MIN_INTERVIEW_ANSWERS = 3;
-
-  const needsAccount = loaded && displayName.length === 0;
-  const needsInterview = loaded && profile.filled < MIN_INTERVIEW_ANSWERS;
-  const isGated = needsAccount || needsInterview;
 
   const speakersList = useMemo(() => {
     const meLabel = (account?.displayName || "").trim()
       ? `Me (${account!.displayName.trim()})`
       : "Me";
     const list: Speaker[] = [{ kind: "me", label: meLabel }];
-    for (const c of connections)
-      list.push({ kind: "connection", id: c.id, label: c.name, role: c.role });
+    for (const c of connections) list.push({ kind: "connection", id: c.id, label: c.name, role: c.role });
     return list;
   }, [account, connections]);
 
@@ -404,8 +419,7 @@ export default function AskPage() {
       ? `Me (${account!.displayName.trim()})`
       : "Me";
     const list: Target[] = [{ kind: "me", label: meLabel }];
-    for (const c of connections)
-      list.push({ kind: "connection", id: c.id, label: c.name, role: c.role });
+    for (const c of connections) list.push({ kind: "connection", id: c.id, label: c.name, role: c.role });
     return list;
   }, [account, connections]);
 
@@ -438,7 +452,7 @@ export default function AskPage() {
       ...prev,
       {
         role: "assistant",
-        text: "Thinking…",
+        text: "Thinking...",
         meta: { question: q, usedProfile, usedPersona },
       },
     ]);
@@ -461,25 +475,46 @@ export default function AskPage() {
       });
 
       const data = await res.json();
+      const answerText = data?.answer || data?.error || "No answer returned.";
 
       setChat((prev) => {
         const copy = [...prev];
         copy[copy.length - 1] = {
           role: "assistant",
-          text: data?.answer || data?.error || "No answer returned.",
+          text: answerText,
           meta: { question: q, usedProfile, usedPersona },
         };
         return copy;
       });
+
+      saveRecentChat({
+        id: uid(),
+        createdAt: Date.now(),
+        question: q,
+        answer: answerText,
+        usedPersona,
+        usedProfile,
+      });
     } catch {
+      const answerText = "Network error calling the AI route.";
+
       setChat((prev) => {
         const copy = [...prev];
         copy[copy.length - 1] = {
           role: "assistant",
-          text: "Network error calling the AI route.",
+          text: answerText,
           meta: { question: q, usedProfile, usedPersona },
         };
         return copy;
+      });
+
+      saveRecentChat({
+        id: uid(),
+        createdAt: Date.now(),
+        question: q,
+        answer: answerText,
+        usedPersona,
+        usedProfile,
       });
     } finally {
       setIsSending(false);
@@ -496,6 +531,12 @@ export default function AskPage() {
     setCorrectionOpen(true);
   }
 
+  function closeCorrection() {
+    setCorrectionOpen(false);
+    setCorrectionTarget(null);
+    setCorrectionDraft("");
+  }
+
   function saveCorrection() {
     if (!correctionTarget) return;
     const corrected = correctionDraft.trim();
@@ -509,346 +550,275 @@ export default function AskPage() {
       createdAt: Date.now(),
     });
 
-    setCorrectionOpen(false);
-    setCorrectionTarget(null);
-    setCorrectionDraft("");
-    alert("✅ Saved correction. Next answers will be influenced by your corrections.");
+    closeCorrection();
+    alert("Saved. Future answers will be influenced by your corrections.");
+  }
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && correctionOpen) closeCorrection();
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && correctionOpen) saveCorrection();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [correctionOpen, correctionDraft, correctionTarget]);
+
+  // While redirecting, show a tiny friendly loading card (prevents flash)
+  if (!loaded || isGated) {
+    return (
+      <div className="ds-card ds-card-pad">
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>Checking setup…</div>
+        <div className="ds-subtitle" style={{ fontSize: 12 }}>
+          Redirecting you to Start.
+        </div>
+      </div>
+    );
   }
 
   return (
-    <main className="ds-page">
-      <div className="ds-shell">
-        {/* Header */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-          }}
-        >
-          <a
-            href="/"
-            style={{
-              fontWeight: 800,
-              letterSpacing: "-0.02em",
-              color: "rgb(var(--text))",
-              textDecoration: "none",
-            }}
-          >
-            Personality AI
-          </a>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <header style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <h1 className="ds-h1">Ask</h1>
+        <p className="ds-subtitle">Always visible: Talk as and ask about.</p>
+      </header>
 
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <a href="/persona" style={{ fontSize: 13, color: "rgb(var(--muted))" }}>
-              Account
-            </a>
-            <a href="/interview" style={{ fontSize: 13, color: "rgb(var(--muted))" }}>
-              Interview
-            </a>
-            <a href="/connections" style={{ fontSize: 13, color: "rgb(var(--muted))" }}>
-              Connections
-            </a>
-            <a
-              href="/ask"
-              style={{ fontSize: 13, color: "rgb(var(--text))", fontWeight: 600 }}
+      <div className="ds-card ds-card-pad" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ fontWeight: 700 }}>Conversation Settings</div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <div className="ds-subtitle" style={{ fontSize: 12, marginBottom: 6 }}>
+              Talk as
+            </div>
+            <select
+              className="ds-input"
+              value={speaker?.kind === "connection" ? `c:${speaker.id}` : "me"}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "me") return persistSpeaker({ kind: "me", label: "Me" });
+                const id = v.slice(2);
+                const found = connections.find((c) => c.id === id);
+                if (found)
+                  persistSpeaker({
+                    kind: "connection",
+                    id: found.id,
+                    label: found.name,
+                    role: found.role,
+                  });
+                else persistSpeaker({ kind: "me", label: "Me" });
+              }}
+              disabled={!loaded}
             >
-              Ask
-            </a>
-            <a href="/profile" style={{ fontSize: 13, color: "rgb(var(--muted))" }}>
-              Profile
-            </a>
+              {speakersList.map((s) =>
+                s.kind === "me" ? (
+                  <option key="me" value="me">
+                    {s.label}
+                  </option>
+                ) : (
+                  <option key={s.id} value={`c:${s.id}`}>
+                    {s.label} ({s.role})
+                  </option>
+                )
+              )}
+            </select>
+          </div>
+
+          <div>
+            <div className="ds-subtitle" style={{ fontSize: 12, marginBottom: 6 }}>
+              Ask about
+            </div>
+            <select
+              className="ds-input"
+              value={target?.kind === "connection" ? `c:${target.id}` : "me"}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "me") return persistTarget({ kind: "me", label: "Me" });
+                const id = v.slice(2);
+                const found = connections.find((c) => c.id === id);
+                if (found)
+                  persistTarget({
+                    kind: "connection",
+                    id: found.id,
+                    label: found.name,
+                    role: found.role,
+                  });
+                else persistTarget({ kind: "me", label: "Me" });
+              }}
+              disabled={!loaded}
+            >
+              {targetsList.map((t) =>
+                t.kind === "me" ? (
+                  <option key="t-me" value="me">
+                    {t.label}
+                  </option>
+                ) : (
+                  <option key={`t-${t.id}`} value={`c:${t.id}`}>
+                    {t.label} ({t.role})
+                  </option>
+                )
+              )}
+            </select>
           </div>
         </div>
 
-        <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <h1 className="ds-h1">Ask</h1>
-          <p className="ds-subtitle">Always visible: Talk as + Ask about.</p>
-        </header>
+        <div className="ds-bubble ds-bubble-user" style={{ whiteSpace: "pre-wrap" }}>
+          {!loaded ? "Loading..." : personaSummary}
+        </div>
+      </div>
 
-        {/* ✅ Setup Gate (friendly) */}
-        {isGated && (
-          <div className="ds-card ds-card-pad" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ fontWeight: 800 }}>Setup required</div>
+      <div className="ds-card ds-card-pad" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ fontWeight: 700 }}>Profile Status</div>
+          <a href="/interview" style={{ fontSize: 12, color: "rgb(var(--muted))" }}>
+            Edit
+          </a>
+        </div>
 
-            {needsAccount && (
-              <div className="ds-subtitle">
-                Your Account name is missing. Please set your display name first.
-              </div>
-            )}
-
-            {needsInterview && (
-              <div className="ds-subtitle">
-                Your Interview profile is too empty ({profile.filled}/{MIN_INTERVIEW_ANSWERS}). Fill at least{" "}
-                {MIN_INTERVIEW_ANSWERS} answers.
-              </div>
-            )}
-
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {needsAccount && (
-                <a className="ds-btn ds-btn-primary" href="/persona">
-                  Go to Account
-                </a>
-              )}
-              {needsInterview && (
-                <a className="ds-btn ds-btn-primary" href="/interview">
-                  Go to Interview
-                </a>
-              )}
-              <a className="ds-btn" href="/profile">
-                View Profile
-              </a>
-            </div>
-
-            <div className="ds-subtitle" style={{ fontSize: 12 }}>
-              Asking is disabled until setup is complete.
-            </div>
-          </div>
-        )}
-
-        {/* Talk as + Ask about */}
-        <div
-          className="ds-card ds-card-pad"
-          style={{ display: "flex", flexDirection: "column", gap: 10 }}
-        >
-          <div style={{ fontWeight: 700 }}>Conversation Settings</div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>
-              <div className="ds-subtitle" style={{ fontSize: 12, marginBottom: 6 }}>
-                Talk as
-              </div>
-              <select
-                className="ds-input"
-                value={speaker?.kind === "connection" ? `c:${speaker.id}` : "me"}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === "me") return persistSpeaker({ kind: "me", label: "Me" });
-                  const id = v.slice(2);
-                  const found = connections.find((c) => c.id === id);
-                  if (found)
-                    persistSpeaker({
-                      kind: "connection",
-                      id: found.id,
-                      label: found.name,
-                      role: found.role,
-                    });
-                  else persistSpeaker({ kind: "me", label: "Me" });
-                }}
-                disabled={!loaded}
-              >
-                {speakersList.map((s) =>
-                  s.kind === "me" ? (
-                    <option key="me" value="me">
-                      {s.label}
-                    </option>
-                  ) : (
-                    <option key={s.id} value={`c:${s.id}`}>
-                      {s.label} ({s.role})
-                    </option>
-                  )
-                )}
-              </select>
-            </div>
-
-            <div>
-              <div className="ds-subtitle" style={{ fontSize: 12, marginBottom: 6 }}>
-                Ask about
-              </div>
-              <select
-                className="ds-input"
-                value={target?.kind === "connection" ? `c:${target.id}` : "me"}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === "me") return persistTarget({ kind: "me", label: "Me" });
-                  const id = v.slice(2);
-                  const found = connections.find((c) => c.id === id);
-                  if (found)
-                    persistTarget({
-                      kind: "connection",
-                      id: found.id,
-                      label: found.name,
-                      role: found.role,
-                    });
-                  else persistTarget({ kind: "me", label: "Me" });
-                }}
-                disabled={!loaded}
-              >
-                {targetsList.map((t) =>
-                  t.kind === "me" ? (
-                    <option key="t-me" value="me">
-                      {t.label}
-                    </option>
-                  ) : (
-                    <option key={`t-${t.id}`} value={`c:${t.id}`}>
-                      {t.label} ({t.role})
-                    </option>
-                  )
-                )}
-              </select>
-            </div>
+        <>
+          <div className="ds-subtitle" style={{ fontSize: 12 }}>
+            Answers saved:{" "}
+            <span style={{ color: "rgb(var(--text))", fontWeight: 700 }}>
+              {profile.filled}
+            </span>
           </div>
 
           <div className="ds-bubble ds-bubble-user" style={{ whiteSpace: "pre-wrap" }}>
-            {!loaded ? "Loading…" : personaSummary}
+            {profile.summary || "No profile saved yet. Go to Interview and click Save."}
           </div>
-        </div>
+        </>
+      </div>
 
-        {/* Profile status */}
-        <div className="ds-card ds-card-pad" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-            <div style={{ fontWeight: 700 }}>Profile Status</div>
-            <a href="/interview" style={{ fontSize: 12, color: "rgb(var(--muted))" }}>
-              Edit →
-            </a>
-          </div>
-
-          {!loaded ? (
-            <div className="ds-subtitle">Loading…</div>
-          ) : (
-            <>
-              <div className="ds-subtitle" style={{ fontSize: 12 }}>
-                Answers saved:{" "}
-                <span style={{ color: "rgb(var(--text))", fontWeight: 700 }}>
-                  {profile.filled}
-                </span>
-              </div>
-
-              <div className="ds-bubble ds-bubble-user" style={{ whiteSpace: "pre-wrap" }}>
-                {profile.summary || "No profile saved yet. Go to Interview and click Save."}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Chat */}
-        <div className="ds-card" style={{ overflow: "hidden" }}>
-          <div className="max-h-[460px] overflow-auto p-4 space-y-3">
-            {chat.map((m, idx) => (
-              <div key={idx} className="space-y-2">
-                <div className={`ds-bubble ${m.role === "user" ? "ds-bubble-user" : ""}`}>
-                  <div className="text-xs mb-1" style={{ color: "rgb(var(--muted))" }}>
-                    {m.role === "user" ? "You" : "Assistant"}
-                  </div>
-                  {m.text}
+      <div className="ds-card" style={{ overflow: "hidden" }}>
+        <div className="max-h-[460px] overflow-auto p-4 space-y-3">
+          {chat.map((m, idx) => (
+            <div key={idx} className="space-y-2">
+              <div className={`ds-bubble ${m.role === "user" ? "ds-bubble-user" : ""}`}>
+                <div className="text-xs mb-1" style={{ color: "rgb(var(--muted))" }}>
+                  {m.role === "user" ? "You" : "Assistant"}
                 </div>
-
-                {m.role === "assistant" && m.meta?.question && (
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      className="ds-btn ds-btn-xs"
-                      onClick={() => alert("✅ Noted as accurate (we’ll store this later).")}
-                    >
-                      ✅ Accurate
-                    </button>
-
-                    <button
-                      className="ds-btn ds-btn-xs"
-                      onClick={() => openCorrection(m.meta!.question!, m.text)}
-                    >
-                      ❌ Not me (correct)
-                    </button>
-
-                    <button className="ds-btn ds-btn-xs" onClick={() => toggleWhy(idx)}>
-                      🧠 Why
-                    </button>
-                  </div>
-                )}
-
-                {m.role === "assistant" && whyOpen[idx] && (
-                  <div className="ds-card ds-card-pad" style={{ boxShadow: "none" }}>
-                    <div style={{ fontWeight: 700, marginBottom: 8 }}>Why this answer</div>
-
-                    <div className="ds-subtitle" style={{ fontSize: 12 }}>
-                      Context used:
-                    </div>
-                    <div className="ds-bubble ds-bubble-user" style={{ whiteSpace: "pre-wrap" }}>
-                      {m.meta?.usedPersona || "(No persona/target)"}{" "}
-                    </div>
-
-                    <div className="ds-subtitle" style={{ fontSize: 12, marginTop: 10 }}>
-                      Profile summary used:
-                    </div>
-                    <div className="ds-bubble ds-bubble-user" style={{ whiteSpace: "pre-wrap" }}>
-                      {m.meta?.usedProfile || "(No profile summary)"}{" "}
-                    </div>
-                  </div>
-                )}
+                {m.text}
               </div>
-            ))}
-          </div>
 
-          <div className="border-t p-3 flex gap-2">
-            <input
-              className="ds-input"
-              placeholder={isGated ? "Complete setup to ask…" : "Type a question…"}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") send();
-              }}
-              disabled={isSending || isGated}
-            />
-            <button
-              className="ds-btn ds-btn-primary"
-              onClick={send}
-              disabled={isSending || isGated}
-            >
-              {isSending ? "Sending…" : "Send"}
-            </button>
-          </div>
+              {m.role === "assistant" && m.meta?.question && (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="ds-btn ds-btn-xs"
+                    onClick={() => alert("Noted. We'll store this later.")}
+                  >
+                    Accurate
+                  </button>
+
+                  <button
+                    className="ds-btn ds-btn-xs"
+                    onClick={() => openCorrection(m.meta!.question!, m.text)}
+                  >
+                    Correct
+                  </button>
+
+                  <button className="ds-btn ds-btn-xs" onClick={() => toggleWhy(idx)}>
+                    Why
+                  </button>
+                </div>
+              )}
+
+              {m.role === "assistant" && whyOpen[idx] && (
+                <div className="ds-card ds-card-pad" style={{ boxShadow: "none" }}>
+                  <div style={{ fontWeight: 700, marginBottom: 8 }}>Why this answer</div>
+
+                  <div className="ds-subtitle" style={{ fontSize: 12 }}>
+                    Context used:
+                  </div>
+                  <div className="ds-bubble ds-bubble-user" style={{ whiteSpace: "pre-wrap" }}>
+                    {m.meta?.usedPersona || "(No persona/target)"}
+                  </div>
+
+                  <div className="ds-subtitle" style={{ fontSize: 12, marginTop: 10 }}>
+                    Profile summary used:
+                  </div>
+                  <div className="ds-bubble ds-bubble-user" style={{ whiteSpace: "pre-wrap" }}>
+                    {m.meta?.usedProfile || "(No profile summary)"}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
 
-        <footer className="ds-subtitle" style={{ fontSize: 12, textAlign: "center" }}>
-          This is a POC. The assistant is an AI representation and may be inaccurate.
-        </footer>
+        <div className="border-t p-3 flex gap-2">
+          <input
+            className="ds-input"
+            placeholder="Type a question..."
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") send();
+            }}
+            disabled={isSending}
+          />
+          <button className="ds-btn ds-btn-primary" onClick={send} disabled={isSending}>
+            {isSending ? "Sending..." : "Send"}
+          </button>
+        </div>
+      </div>
 
-        {correctionOpen && correctionTarget && (
-          <div className="ds-overlay">
-            <div className="ds-modal" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div className="flex items-center justify-between">
-                <div className="font-semibold">Correct the AI</div>
-                <button className="text-sm underline" onClick={() => setCorrectionOpen(false)}>
-                  Close
-                </button>
-              </div>
+      <footer className="ds-subtitle" style={{ fontSize: 12, textAlign: "center" }}>
+        This is a POC. The assistant is an AI representation and may be inaccurate.
+      </footer>
 
-              <div className="ds-subtitle" style={{ fontSize: 12 }}>
-                Question
-              </div>
-              <div className="ds-bubble" style={{ whiteSpace: "pre-wrap" }}>
-                {correctionTarget.question}
-              </div>
+      {correctionOpen && correctionTarget && (
+        <div className="ds-overlay" onClick={closeCorrection}>
+          <div
+            className="ds-modal"
+            style={{ display: "flex", flexDirection: "column", gap: 12 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div className="font-semibold">Correct the AI</div>
+              <button className="text-sm underline" onClick={closeCorrection}>
+                Close
+              </button>
+            </div>
 
-              <div className="ds-subtitle" style={{ fontSize: 12 }}>
-                AI Answer
-              </div>
-              <div className="ds-bubble" style={{ whiteSpace: "pre-wrap" }}>
-                {correctionTarget.aiAnswer}
-              </div>
+            <div className="ds-subtitle" style={{ fontSize: 12 }}>
+              Question
+            </div>
+            <div className="ds-bubble" style={{ whiteSpace: "pre-wrap" }}>
+              {correctionTarget.question}
+            </div>
 
-              <div className="ds-subtitle" style={{ fontSize: 12 }}>
-                What would YOU say instead?
-              </div>
-              <textarea
-                className="ds-textarea"
-                value={correctionDraft}
-                onChange={(e) => setCorrectionDraft(e.target.value)}
-                placeholder="Write your corrected answer…"
-              />
+            <div className="ds-subtitle" style={{ fontSize: 12 }}>
+              AI answer
+            </div>
+            <div className="ds-bubble" style={{ whiteSpace: "pre-wrap" }}>
+              {correctionTarget.aiAnswer}
+            </div>
 
-              <div className="flex justify-end gap-2">
-                <button className="ds-btn" onClick={() => setCorrectionOpen(false)}>
-                  Cancel
-                </button>
-                <button className="ds-btn ds-btn-primary" onClick={saveCorrection}>
-                  Save Correction
-                </button>
-              </div>
+            <div className="ds-subtitle" style={{ fontSize: 12 }}>
+              What would you say instead?
+            </div>
+            <textarea
+              className="ds-textarea"
+              value={correctionDraft}
+              onChange={(e) => setCorrectionDraft(e.target.value)}
+              placeholder="Write your corrected answer..."
+            />
+
+            <div className="ds-subtitle" style={{ fontSize: 12 }}>
+              Tip: Press Escape to close. Press Ctrl/Cmd + Enter to save.
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button className="ds-btn" onClick={closeCorrection}>
+                Cancel
+              </button>
+              <button className="ds-btn ds-btn-primary" onClick={saveCorrection}>
+                Save Correction
+              </button>
             </div>
           </div>
-        )}
-      </div>
-    </main>
+        </div>
+      )}
+    </div>
   );
 }

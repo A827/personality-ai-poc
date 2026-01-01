@@ -1,21 +1,57 @@
 /* ================================
    POC Design System (Calm / Premium)
-   Paste at bottom of app/globals.css
+   Replace your DS block with this
 ================================== */
 
 :root {
   --bg: 255 255 255;
   --panel: 255 255 255;
-  --text: 17 24 39;     /* gray-900 */
-  --muted: 107 114 128; /* gray-500 */
-  --border: 229 231 235;/* gray-200 */
-  --ring: 59 130 246;   /* blue-500 */
-  --shadow: 0 8px 30px rgba(0,0,0,0.06);
+  --text: 17 24 39;      /* gray-900 */
+  --muted: 107 114 128;  /* gray-500 */
+  --border: 229 231 235; /* gray-200 */
+  --ring: 59 130 246;    /* blue-500 */
+  --shadow: 0 10px 30px rgba(0,0,0,0.06);
+
+  /* radii + spacing */
+  --r-lg: 16px;
+  --r-md: 14px;
+  --r-sm: 12px;
+}
+
+/* Dark mode (automatic) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: 10 12 16;        /* near-black */
+    --panel: 16 18 24;     /* deep panel */
+    --text: 235 237 242;   /* near-white */
+    --muted: 155 163 175;  /* muted */
+    --border: 34 38 48;    /* subtle border */
+    --ring: 96 165 250;    /* blue-400 */
+    --shadow: 0 18px 40px rgba(0,0,0,0.45);
+  }
+}
+
+/* Base */
+html, body {
+  height: 100%;
 }
 
 body {
   background: rgb(var(--bg));
   color: rgb(var(--text));
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  line-height: 1.5;
+}
+
+/* Links */
+a {
+  color: rgb(var(--text));
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* Containers */
@@ -27,9 +63,10 @@ body {
   align-items: flex-start;
 }
 
+/* Slightly wider shell so pages feel like an app */
 .ds-shell {
   width: 100%;
-  max-width: 42rem; /* ~max-w-2xl */
+  max-width: 64rem; /* wider than 42rem */
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -52,7 +89,7 @@ body {
 .ds-card {
   background: rgb(var(--panel));
   border: 1px solid rgb(var(--border));
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   box-shadow: var(--shadow);
 }
 
@@ -60,37 +97,63 @@ body {
   padding: 16px;
 }
 
+/* Sub-card look (no big shadow) */
+.ds-card-soft {
+  box-shadow: none;
+  background: rgba(var(--panel), 0.92);
+}
+
 /* Chat bubbles */
 .ds-bubble {
   border: 1px solid rgb(var(--border));
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   padding: 12px;
   font-size: 14px;
   line-height: 1.55;
-  background: rgb(255 255 255);
+  background: rgba(255,255,255,0.7);
+}
+
+@media (prefers-color-scheme: dark) {
+  .ds-bubble {
+    background: rgba(0,0,0,0.12);
+  }
 }
 
 .ds-bubble-user {
-  background: rgb(249 250 251); /* gray-50 */
+  background: rgba(249,250,251,0.9);
+}
+
+@media (prefers-color-scheme: dark) {
+  .ds-bubble-user {
+    background: rgba(0,0,0,0.20);
+  }
 }
 
 /* Buttons */
 .ds-btn {
   border: 1px solid rgb(var(--border));
-  border-radius: 14px;
+  border-radius: var(--r-md);
   padding: 10px 14px;
   font-size: 14px;
   transition: 150ms ease;
-  background: white;
+  background: rgb(var(--panel));
+  color: rgb(var(--text));
+  cursor: pointer;
+  user-select: none;
 }
 
 .ds-btn:hover {
-  background: rgb(249 250 251);
+  transform: translateY(-1px);
+}
+
+.ds-btn:active {
+  transform: translateY(0px);
 }
 
 .ds-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+  transform: none;
 }
 
 .ds-btn-primary {
@@ -99,45 +162,57 @@ body {
   color: white;
 }
 
-.ds-btn-primary:hover {
-  background: rgb(31 41 55); /* gray-800 */
+@media (prefers-color-scheme: dark) {
+  .ds-btn-primary {
+    border-color: rgba(255,255,255,0.8);
+    background: rgba(255,255,255,0.92);
+    color: rgb(10 12 16);
+  }
 }
 
 .ds-btn-xs {
   padding: 6px 10px;
   font-size: 12px;
-  border-radius: 12px;
+  border-radius: var(--r-sm);
 }
 
 /* Inputs */
-.ds-input {
+.ds-input,
+.ds-textarea,
+select.ds-input {
   width: 100%;
   border: 1px solid rgb(var(--border));
-  border-radius: 14px;
+  border-radius: var(--r-md);
   padding: 10px 12px;
   font-size: 14px;
   outline: none;
-}
-
-.ds-input:focus {
-  box-shadow: 0 0 0 3px rgba(var(--ring), 0.25);
-  border-color: rgba(var(--ring), 0.8);
+  background: rgb(var(--panel));
+  color: rgb(var(--text));
 }
 
 .ds-textarea {
-  width: 100%;
   min-height: 120px;
-  border: 1px solid rgb(var(--border));
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-size: 14px;
-  outline: none;
   resize: vertical;
 }
 
-.ds-textarea:focus {
+/* Focus handling that feels premium */
+.ds-input:focus,
+.ds-textarea:focus,
+select.ds-input:focus {
   box-shadow: 0 0 0 3px rgba(var(--ring), 0.25);
   border-color: rgba(var(--ring), 0.8);
+}
+
+/* Keyboard focus only */
+.ds-btn:focus {
+  outline: none;
+}
+.ds-btn:focus-visible,
+a:focus-visible,
+.ds-input:focus-visible,
+.ds-textarea:focus-visible {
+  outline: 3px solid rgba(var(--ring), 0.35);
+  outline-offset: 2px;
 }
 
 /* Modal */
@@ -154,47 +229,41 @@ body {
 .ds-modal {
   width: 100%;
   max-width: 36rem;
-  background: white;
+  background: rgb(var(--panel));
   border: 1px solid rgb(var(--border));
   border-radius: 18px;
   box-shadow: var(--shadow);
   padding: 16px;
 }
+
 /* ================================
-   Global polish: make it feel like an app
+   App header / navigation
 ================================== */
 
-/* Better base typography + consistent link look */
-body {
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
-    "Segoe UI Emoji";
-  line-height: 1.5;
-}
-
-a {
-  color: rgb(var(--text));
-  text-decoration: none;
-}
-
-a:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-/* Sticky app header style */
 .ds-topbar {
   position: sticky;
   top: 0;
   z-index: 50;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(8px);
+  background: rgba(var(--panel), 0.82);
+  backdrop-filter: blur(10px);
   border: 1px solid rgb(var(--border));
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   box-shadow: var(--shadow);
   padding: 12px 14px;
 }
 
-/* Nav links */
+.ds-topbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ds-brand {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
 .ds-nav {
   display: flex;
   gap: 14px;
@@ -205,22 +274,34 @@ a:hover {
   font-size: 13px;
   color: rgb(var(--muted));
   text-decoration: none;
+  padding: 6px 8px;
+  border-radius: 10px;
+  transition: 150ms ease;
 }
 
 .ds-nav a:hover {
   color: rgb(var(--text));
+  background: rgba(var(--text), 0.04);
   text-decoration: none;
 }
 
 .ds-nav a[data-active="true"] {
   color: rgb(var(--text));
   font-weight: 700;
+  background: rgba(var(--text), 0.06);
 }
 
-/* Cleaner section divider look */
+/* Divider */
 .ds-divider {
   height: 1px;
   background: rgb(var(--border));
   margin: 8px 0;
   opacity: 0.8;
+}
+
+/* Mobile padding */
+@media (max-width: 640px) {
+  .ds-page {
+    padding: 16px;
+  }
 }

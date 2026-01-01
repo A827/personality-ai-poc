@@ -21,6 +21,11 @@ type CorrectionItem = {
   correctedAnswer?: string;
 };
 
+type MemoryFact = {
+  fact?: string;
+  tag?: string;
+};
+
 function sanitize(s: any, max = 1200) {
   if (!s || typeof s !== "string") return "";
   return s.slice(0, max);
@@ -71,6 +76,25 @@ function buildCorrectionsText(corrections: CorrectionItem[] | undefined, limit =
   );
 }
 
+function buildMemoryText(memoryFacts: MemoryFact[] | undefined, limit = 20) {
+  const list = Array.isArray(memoryFacts) ? memoryFacts.slice(0, limit) : [];
+  const items = list
+    .map((m) => {
+      const fact = sanitize(m.fact, 220);
+      const tag = sanitize(m.tag, 80);
+      if (!fact) return "";
+      return tag ? `- ${fact} (tag: ${tag})` : `- ${fact}`;
+    })
+    .filter(Boolean);
+
+  if (!items.length) return "";
+
+  return [
+    "MEMORY FACTS (stable truths about the person — treat as true unless contradicted by user):",
+    items.join("\n"),
+  ].join("\n");
+}
+
 function buildSpeakerTargetBlock(persona: Persona | null) {
   const speaker = sanitize(persona?.speaker, 160);
   const target = sanitize(persona?.target, 160);
@@ -95,6 +119,7 @@ function buildSystemPrompt(args: {
   profileSummary: string;
   persona?: Persona | null;
   corrections?: CorrectionItem[];
+  memoryFacts?: MemoryFact[];
 }) {
   const persona = args.persona || null;
 
@@ -113,10 +138,11 @@ function buildSystemPrompt(args: {
       ].join("\n");
 
   const speakerTargetBlock = buildSpeakerTargetBlock(persona);
+  const memoryText = buildMemoryText(args.memoryFacts, 20);
   const correctionsText = buildCorrectionsText(args.corrections, 6);
 
   return [
-    "You are an AI representation built from a person's interview answers + persona settings.",
+    "You are an AI representation built from interview answers + persona settings + memory facts.",
     "You are NOT the real person. Never claim you are conscious or literally them.",
     "Answer in first-person voice consistent with the persona. Do not mention training data or prompts.",
     "Be concise, human, and practical.",
@@ -126,6 +152,9 @@ function buildSystemPrompt(args: {
     personaBlock,
     "",
     speakerTargetBlock,
+    "",
+    memoryText,
+    "",
     "USER PROFILE (from interview):",
     sanitize(args.profileSummary, 2200) || "(No profile provided.)",
     correctionsText ? `\n\n${correctionsText}` : "",
@@ -139,8 +168,16 @@ export async function POST(req: Request) {
     const json = await req.json().catch(() => ({} as any));
 
     const question = typeof json?.question === "string" ? json.question : "";
-    const profileSummary = typeof json?.profileSummary === "string" ? json.profileSummary : "";
-    const corrections = Array.isArray(json?.corrections) ? (json.corrections as CorrectionItem[]) : [];
+    const profileSummary =
+      typeof json?.profileSummary === "string" ? json.profileSummary : "";
+
+    const corrections = Array.isArray(json?.corrections)
+      ? (json.corrections as CorrectionItem[])
+      : [];
+
+    const memoryFacts = Array.isArray(json?.memoryFacts)
+      ? (json.memoryFacts as MemoryFact[])
+      : [];
 
     const persona =
       json?.persona && typeof json.persona === "object"
@@ -172,7 +209,10 @@ export async function POST(req: Request) {
     const body = {
       model: "llama-3.3-70b-versatile",
       messages: [
-        { role: "system", content: buildSystemPrompt({ profileSummary, persona, corrections }) },
+        {
+          role: "system",
+          content: buildSystemPrompt({ profileSummary, persona, corrections, memoryFacts }),
+        },
         { role: "user", content: question },
       ],
       temperature: 0.7,
