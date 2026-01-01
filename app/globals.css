@@ -1,26 +1,226 @@
-@import "tailwindcss";
+/* ================================
+   POC Design System (Calm / Premium)
+   Paste at bottom of app/globals.css
+================================== */
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --bg: 255 255 255;
+  --panel: 255 255 255;
+  --text: 17 24 39;     /* gray-900 */
+  --muted: 107 114 128; /* gray-500 */
+  --border: 229 231 235;/* gray-200 */
+  --ring: 59 130 246;   /* blue-500 */
+  --shadow: 0 8px 30px rgba(0,0,0,0.06);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: rgb(var(--bg));
+  color: rgb(var(--text));
+}
+
+/* Containers */
+.ds-page {
+  min-height: 100vh;
+  padding: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.ds-shell {
+  width: 100%;
+  max-width: 42rem; /* ~max-w-2xl */
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Typography */
+.ds-h1 {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.ds-subtitle {
+  color: rgb(var(--muted));
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Panels / Cards */
+.ds-card {
+  background: rgb(var(--panel));
+  border: 1px solid rgb(var(--border));
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.ds-card-pad {
+  padding: 16px;
+}
+
+/* Chat bubbles */
+.ds-bubble {
+  border: 1px solid rgb(var(--border));
+  border-radius: 16px;
+  padding: 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  background: rgb(255 255 255);
+}
+
+.ds-bubble-user {
+  background: rgb(249 250 251); /* gray-50 */
+}
+
+/* Buttons */
+.ds-btn {
+  border: 1px solid rgb(var(--border));
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-size: 14px;
+  transition: 150ms ease;
+  background: white;
+}
+
+.ds-btn:hover {
+  background: rgb(249 250 251);
+}
+
+.ds-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ds-btn-primary {
+  border-color: rgb(var(--text));
+  background: rgb(var(--text));
+  color: white;
+}
+
+.ds-btn-primary:hover {
+  background: rgb(31 41 55); /* gray-800 */
+}
+
+.ds-btn-xs {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 12px;
+}
+
+/* Inputs */
+.ds-input {
+  width: 100%;
+  border: 1px solid rgb(var(--border));
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+}
+
+.ds-input:focus {
+  box-shadow: 0 0 0 3px rgba(var(--ring), 0.25);
+  border-color: rgba(var(--ring), 0.8);
+}
+
+.ds-textarea {
+  width: 100%;
+  min-height: 120px;
+  border: 1px solid rgb(var(--border));
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+  resize: vertical;
+}
+
+.ds-textarea:focus {
+  box-shadow: 0 0 0 3px rgba(var(--ring), 0.25);
+  border-color: rgba(var(--ring), 0.8);
+}
+
+/* Modal */
+.ds-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.ds-modal {
+  width: 100%;
+  max-width: 36rem;
+  background: white;
+  border: 1px solid rgb(var(--border));
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+/* ================================
+   Global polish: make it feel like an app
+================================== */
+
+/* Better base typography + consistent link look */
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
+    "Segoe UI Emoji";
+  line-height: 1.5;
+}
+
+a {
+  color: rgb(var(--text));
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Sticky app header style */
+.ds-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgb(var(--border));
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+}
+
+/* Nav links */
+.ds-nav {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.ds-nav a {
+  font-size: 13px;
+  color: rgb(var(--muted));
+  text-decoration: none;
+}
+
+.ds-nav a:hover {
+  color: rgb(var(--text));
+  text-decoration: none;
+}
+
+.ds-nav a[data-active="true"] {
+  color: rgb(var(--text));
+  font-weight: 700;
+}
+
+/* Cleaner section divider look */
+.ds-divider {
+  height: 1px;
+  background: rgb(var(--border));
+  margin: 8px 0;
+  opacity: 0.8;
 }

@@ -1,4 +1,7 @@
-export type Correction = {
+// app/lib/pocStorage.ts
+// (or src/app/lib/pocStorage.ts — keep ONLY ONE copy)
+
+export type CorrectionItem = {
   id: string;
   question: string;
   aiAnswer: string;
@@ -8,22 +11,39 @@ export type Correction = {
 
 const CORRECTIONS_KEY = "poc_corrections_v1";
 
-export function loadCorrections(): Correction[] {
+/**
+ * Load all saved corrections (newest first)
+ */
+export function loadCorrections(): CorrectionItem[] {
   if (typeof window === "undefined") return [];
+
   try {
     const raw = localStorage.getItem(CORRECTIONS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed;
   } catch {
     return [];
   }
 }
 
-export function saveCorrections(items: Correction[]) {
+/**
+ * Add a new correction
+ */
+export function addCorrection(item: CorrectionItem) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(CORRECTIONS_KEY, JSON.stringify(items));
+
+  const existing = loadCorrections();
+
+  const next = [item, ...existing].slice(0, 50); // hard cap (safe for prompts)
+
+  localStorage.setItem(CORRECTIONS_KEY, JSON.stringify(next));
 }
 
-export function addCorrection(c: Correction) {
-  const existing = loadCorrections();
-  saveCorrections([c, ...existing]);
+/**
+ * Clear all corrections (optional utility)
+ */
+export function clearCorrections() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(CORRECTIONS_KEY);
 }
