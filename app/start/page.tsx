@@ -39,6 +39,7 @@ export default function StartPage() {
   useEffect(() => {
     const acc = safeParse<MyAccount | null>(localStorage.getItem(PERSONA_KEY), null);
     const a = safeParse<AnswerMap>(localStorage.getItem(STORAGE_KEY), {});
+
     setExisting(acc);
     setAnswers(a);
 
@@ -54,12 +55,27 @@ export default function StartPage() {
   const nameOk = useMemo(() => (existing?.displayName || "").trim().length > 0, [existing]);
   const interviewOk = useMemo(() => filled >= MIN_INTERVIEW_ANSWERS, [filled]);
 
+  // ✅ If already logged in, Start page should behave like onboarding:
+  // If interview ready -> send to /ask
+  // If interview not ready -> send to /interview
+  useEffect(() => {
+    if (!loaded) return;
+    if (!nameOk) return;
+
+    // already has identity
+    window.location.href = interviewOk ? "/ask" : "/interview";
+  }, [loaded, nameOk, interviewOk]);
+
   // flow:
   // - if no name: stay here and create
   // - if no interview: go interview
   // - else: go ask
   const nextHref = !nameOk ? "/start" : !interviewOk ? "/interview" : "/ask";
-  const nextLabel = !nameOk ? "Create identity" : !interviewOk ? "Continue to interview" : "Continue to Ask";
+  const nextLabel = !nameOk
+    ? "Create identity"
+    : !interviewOk
+    ? "Continue to interview"
+    : "Continue to Ask";
 
   function save() {
     const displayName = name.trim();
@@ -119,11 +135,16 @@ export default function StartPage() {
             </div>
 
             {existing?.displayName ? (
-              <div className="ds-card ds-card-pad ds-card-soft" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div
+                className="ds-card ds-card-pad ds-card-soft"
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
                 <div style={{ fontWeight: 800 }}>Welcome back</div>
                 <div className="ds-subtitle">
                   Signed in locally as{" "}
-                  <span style={{ color: "rgb(var(--text))", fontWeight: 700 }}>{existing.displayName}</span>
+                  <span style={{ color: "rgb(var(--text))", fontWeight: 700 }}>
+                    {existing.displayName}
+                  </span>
                 </div>
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -144,7 +165,10 @@ export default function StartPage() {
               </div>
             ) : (
               <>
-                <div className="ds-card ds-card-pad ds-card-soft" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div
+                  className="ds-card ds-card-pad ds-card-soft"
+                  style={{ display: "flex", flexDirection: "column", gap: 10 }}
+                >
                   <div>
                     <div className="ds-subtitle" style={{ fontSize: 12, marginBottom: 6 }}>
                       Your name
@@ -170,11 +194,16 @@ export default function StartPage() {
                   </div>
 
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <button className="ds-btn ds-btn-primary" onClick={save} disabled={!name.trim()}>
+                    <button
+                      className="ds-btn ds-btn-primary"
+                      onClick={save}
+                      disabled={!name.trim()}
+                    >
                       Create identity
                     </button>
 
-                    <a className="ds-btn" href="/ask">
+                    {/* ✅ Skip should go to Login page, not Ask */}
+                    <a className="ds-btn" href="/login">
                       Skip for now
                     </a>
                   </div>
