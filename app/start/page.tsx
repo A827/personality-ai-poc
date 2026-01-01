@@ -52,26 +52,41 @@ export default function StartPage() {
   }, []);
 
   const filled = useMemo(() => countFilledAnswers(answers), [answers]);
-  const nameOk = useMemo(() => (existing?.displayName || "").trim().length > 0, [existing]);
+
+  // ✅ IMPORTANT: nameOk should consider:
+  // 1) saved existing identity OR
+  // 2) user typing a name right now
+  const nameOk = useMemo(() => {
+    const saved = (existing?.displayName || "").trim().length > 0;
+    const typing = name.trim().length > 0;
+    return saved || typing;
+  }, [existing, name]);
+
   const interviewOk = useMemo(() => filled >= MIN_INTERVIEW_ANSWERS, [filled]);
 
-  // ✅ If already logged in, Start page should behave like onboarding:
-  // If interview ready -> send to /ask
-  // If interview not ready -> send to /interview
+  // ✅ If identity already exists, Start acts like onboarding router:
+  // If interview ready -> /ask
+  // If interview not ready -> /interview
   useEffect(() => {
     if (!loaded) return;
-    if (!nameOk) return;
 
-    // already has identity
-    window.location.href = interviewOk ? "/ask" : "/interview";
-  }, [loaded, nameOk, interviewOk]);
+    const savedName = (existing?.displayName || "").trim();
+    if (!savedName) return; // only auto-redirect if identity already exists
+
+    window.location.replace(interviewOk ? "/ask" : "/interview");
+  }, [loaded, existing, interviewOk]);
 
   // flow:
-  // - if no name: stay here and create
+  // - if no identity: stay here and create
   // - if no interview: go interview
   // - else: go ask
-  const nextHref = !nameOk ? "/start" : !interviewOk ? "/interview" : "/ask";
-  const nextLabel = !nameOk
+  const nextHref = !(existing?.displayName || "").trim()
+    ? "/start"
+    : !interviewOk
+    ? "/interview"
+    : "/ask";
+
+  const nextLabel = !(existing?.displayName || "").trim()
     ? "Create identity"
     : !interviewOk
     ? "Continue to interview"
@@ -122,7 +137,11 @@ export default function StartPage() {
               <div>
                 <div style={{ fontWeight: 800 }}>Account</div>
                 <div className="ds-subtitle" style={{ fontSize: 12, marginTop: 6 }}>
-                  {nameOk ? `Ready: ${existing?.displayName}` : "Missing"}
+                  {(existing?.displayName || "").trim()
+                    ? `Ready: ${existing?.displayName}`
+                    : name.trim()
+                    ? "Typing…"
+                    : "Missing"}
                 </div>
               </div>
 
@@ -134,7 +153,7 @@ export default function StartPage() {
               </div>
             </div>
 
-            {existing?.displayName ? (
+            {(existing?.displayName || "").trim() ? (
               <div
                 className="ds-card ds-card-pad ds-card-soft"
                 style={{ display: "flex", flexDirection: "column", gap: 10 }}
@@ -143,7 +162,7 @@ export default function StartPage() {
                 <div className="ds-subtitle">
                   Signed in locally as{" "}
                   <span style={{ color: "rgb(var(--text))", fontWeight: 700 }}>
-                    {existing.displayName}
+                    {existing!.displayName}
                   </span>
                 </div>
 
